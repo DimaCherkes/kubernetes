@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: full-stack-app
+  labels:
+    app.kubernetes.io/name: full-stack-app
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: full-stack-app
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-service:5432/taskdb
+  SPRING_JPA_HIBERNATE_DDL_AUTO: update
+  SERVER_PORT: "8080"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_HEALTH_LIVENESSSTATE_ENABLED: "true"
+  MANAGEMENT_HEALTH_READINESSSTATE_ENABLED: "true"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: "http://tempo-service:4318/v1/traces"
+  SPRING_APPLICATION_JSON: '{"management":{"metrics":{"distribution":{"percentiles-histogram":{"http.server.requests":true}}}}}'

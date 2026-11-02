@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-exporter-config
+  namespace: full-stack-app
+  labels:
+    app.kubernetes.io/name: event-exporter
+    app.kubernetes.io/component: events
+    app.kubernetes.io/part-of: full-stack-app
+data:
+  config.yaml: |
+    logLevel: info
+    logFormat: json
+    maxEventAgeSeconds: 300
+    kubeQPS: 100
+    kubeBurst: 500
+    route:
+      routes:
+        - match:
+            - receiver: "loki"
+    receivers:
+      - name: "loki"
+        loki:
+          url: "http://loki-service:3100/loki/api/v1/push"
+          streamLabels:
+            app: "event-exporter"
+            job: "kubernetes-event-exporter"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-exporter
+  namespace: full-stack-app
+  labels:
+    app: event-exporter
+    app.kubernetes.io/name: event-exporter
+    app.kubernetes.io/component: events
+    app.kubernetes.io/part-of: full-stack-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: event-exporter
+  template:
+    metadata:
+      labels:
+        app: event-exporter
+        app.kubernetes.io/name: event-exporter
+        app.kubernetes.io/component: events
+        app.kubernetes.io/part-of: full-stack-app
+    spec:
+      serviceAccountName: event-exporter
+      containers:
+        - name: event-exporter
+          image: ghcr.io/resmoio/kubernetes-event-exporter:v1.7
+          args:
+            - "-conf=/data/config.yaml"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: cfg
+              mountPath: /data
+      volumes:
+        - name: cfg
+          configMap:
+            name: event-exporter-config
