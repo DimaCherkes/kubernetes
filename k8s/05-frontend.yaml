@@ -38,7 +38,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: fullstack-frontend:v4
+          image: fullstack-frontend:v5
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

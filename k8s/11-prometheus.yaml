@@ -209,6 +209,13 @@ data:
         scrape_interval: 10s
         static_configs:
           - targets: ['kube-state-metrics.full-stack-app.svc.cluster.local:8080']
+
+      - job_name: 'elasticsearch'
+        scrape_interval: 15s
+        static_configs:
+          - targets: ['elasticsearch-exporter.full-stack-app.svc.cluster.local:9114']
+            labels:
+              cluster: task-search
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -1,0 +1,16 @@
+spring:
+  elasticsearch:
+    uris: ${SPRING_ELASTICSEARCH_URIS:https://task-search-es-http:9200}
+    username: ${SPRING_ELASTICSEARCH_USERNAME:elastic}
+    password: ${SPRING_ELASTICSEARCH_PASSWORD:${ELASTICSEARCH_PASSWORD:}}
+    connection-timeout: 2s
+    socket-timeout: 5s
+    restclient:
+      ssl:
+        bundle: elasticsearch
+  ssl:
+    bundle:
+      pem:
+        elasticsearch:
+          truststore:
+            certificate: ${ELASTICSEARCH_CA_CERT:file:/etc/elasticsearch/certs/ca.crt}

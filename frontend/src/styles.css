@@ -522,11 +522,141 @@ body {
 
 .section-toolbar {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+.toolbar-controls-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  padding-bottom: 4px;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.search-input-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 38px 10px 38px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+
+.search-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.search-input::-webkit-search-cancel-button,
+.search-input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background-color: var(--bg-color);
+  color: var(--text-secondary);
+  border-radius: 50%;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.search-clear-btn:hover {
+  background-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.search-clear-btn.hidden {
+  display: none;
+}
+
+.search-submit-btn {
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.search-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.search-source-badge.hidden {
+  display: none;
+}
+
+.search-source-badge.source-es {
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  border-color: #86efac;
+}
+
+.search-source-badge.source-pg {
+  background-color: var(--warning-bg);
+  color: var(--warning-text);
+  border-color: #fcd34d;
+}
+
+.btn-reindex {
+  border: 1px solid transparent;
+}
+
+.btn-reindex:hover:not(:disabled) {
+  border-color: var(--border-color);
 }
 
 .filter-group {
@@ -717,12 +847,19 @@ body {
 }
 
 /* Task Details Body */
-.task-body {
+.task-body,
+.task-content {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.task-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .task-header-row {
@@ -774,6 +911,26 @@ body {
 
 .task-item.completed .task-desc {
   color: var(--text-muted);
+}
+
+.task-title mark,
+.task-desc mark {
+  background-color: #fef08a;
+  color: var(--text-primary);
+  padding: 0 3px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.task-item.completed .task-title mark {
+  background-color: #fef3c7;
+  color: #1e293b;
+  text-decoration: line-through;
+}
+
+.task-item.completed .task-desc mark {
+  background-color: #fef3c7;
+  color: #334155;
 }
 
 .task-meta {
@@ -871,6 +1028,10 @@ body {
   font-size: 0.875rem;
 }
 
+.pagination-bar.hidden {
+  display: none;
+}
+
 .pagination-bold {
   font-weight: 600;
   color: var(--text-primary);
@@ -935,6 +1096,12 @@ body {
 }
 
 @media (max-width: 640px) {
+  .toolbar-controls-row {
+    align-items: stretch;
+  }
+  .toolbar-actions {
+    justify-content: flex-end;
+  }
   .pagination-bar {
     flex-direction: column;
     align-items: stretch;
@@ -945,6 +1112,23 @@ body {
   }
   .pagination-size {
     justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .search-form {
+    flex-wrap: wrap;
+  }
+  .search-submit-btn {
+    width: 100%;
+  }
+  .filter-group {
+    width: 100%;
+  }
+  .filter-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 6px 8px;
   }
 }
 

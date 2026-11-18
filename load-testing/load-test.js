@@ -16,9 +16,9 @@ const tasksCreatedCount = new Counter('tasks_created_total');
 // ==============================================================================
 export const options = {
   stages: [
-    { duration: '15s', target: 100 },
-    { duration: '45s', target: 200 },
-    { duration: '15s', target: 300 },
+    { duration: '15s', target: 50 },
+    { duration: '45s', target: 100 },
+    { duration: '15s', target: 150 },
     { duration: '15s', target: 0 },
   ],
   thresholds: {

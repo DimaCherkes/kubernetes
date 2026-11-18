@@ -15,19 +15,26 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
 @Service
-@Transactional
 public class TaskService {
 
     private static final Logger log = LoggerFactory.getLogger(TaskService.class);
 
     private final TaskRepository taskRepository;
+    private final TransactionTemplate transactionTemplate;
+    private final TaskSearchService taskSearchService;
 
-    public TaskService(TaskRepository taskRepository) {
+    public TaskService(
+            TaskRepository taskRepository,
+            TransactionTemplate transactionTemplate,
+            TaskSearchService taskSearchService) {
         this.taskRepository = taskRepository;
+        this.transactionTemplate = transactionTemplate;
+        this.taskSearchService = taskSearchService;
     }
 
     @Transactional(readOnly = true)
@@ -86,40 +93,56 @@ public class TaskService {
 
     public TaskResponse createTask(TaskCreateRequest request) {
         log.info("Persisting new task with title: {}", request.title());
-        Task task = new Task();
-        task.setTitle(request.title());
-        task.setDescription(request.description() != null ? request.description() : "");
-        task.setCompleted(request.completed() != null ? request.completed() : false);
-        Task saved = taskRepository.save(task);
+        Task saved = transactionTemplate.execute(status -> {
+            Task task = new Task();
+            task.setTitle(request.title());
+            task.setDescription(request.description() != null ? request.description() : "");
+            task.setCompleted(request.completed() != null ? request.completed() : false);
+            return taskRepository.saveAndFlush(task);
+        });
+        if (saved == null) {
+            throw new IllegalStateException("Failed to persist task");
+        }
         log.info("Persisted task successfully with id: {}", saved.getId());
+        taskSearchService.indexTask(saved);
         return toResponse(saved);
     }
 
     public TaskResponse updateTask(Long id, TaskUpdateRequest request) {
         log.info("Updating task with id: {}", id);
-        Task task = taskRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Task not found with id: " + id));
-        if (request.title() != null && !request.title().isBlank()) {
-            task.setTitle(request.title());
+        Task updated = transactionTemplate.execute(status -> {
+            Task task = taskRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Task not found with id: " + id));
+            if (request.title() != null && !request.title().isBlank()) {
+                task.setTitle(request.title());
+            }
+            if (request.description() != null) {
+                task.setDescription(request.description());
+            }
+            if (request.completed() != null) {
+                task.setCompleted(request.completed());
+            }
+            return taskRepository.saveAndFlush(task);
+        });
+        if (updated == null) {
+            throw new IllegalStateException("Failed to update task with id: " + id);
         }
-        if (request.description() != null) {
-            task.setDescription(request.description());
-        }
-        if (request.completed() != null) {
-            task.setCompleted(request.completed());
-        }
-        Task updated = taskRepository.save(task);
         log.info("Updated task successfully with id: {}", updated.getId());
+        taskSearchService.indexTask(updated);
         return toResponse(updated);
     }
 
     public void deleteTask(Long id) {
         log.info("Deleting task with id: {}", id);
-        if (!taskRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Task not found with id: " + id);
-        }
-        taskRepository.deleteById(id);
+        transactionTemplate.executeWithoutResult(status -> {
+            if (!taskRepository.existsById(id)) {
+                throw new ResourceNotFoundException("Task not found with id: " + id);
+            }
+            taskRepository.deleteById(id);
+            taskRepository.flush();
+        });
         log.info("Deleted task successfully with id: {}", id);
+        taskSearchService.deleteTask(id);
     }
 
     private TaskResponse toResponse(Task task) {

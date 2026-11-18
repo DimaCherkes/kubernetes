@@ -1,0 +1,61 @@
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: task-search
+  namespace: full-stack-app
+  labels:
+    app.kubernetes.io/name: elasticsearch
+    app.kubernetes.io/component: search
+    app.kubernetes.io/part-of: full-stack-app
+spec:
+  version: "8.17.10"
+  nodeSets:
+    - name: default
+      count: 3
+      config:
+        # Avoids privileged sysctl initContainer for vm.max_map_count=1048576 in local 3-node PoC
+        node.store.allow_mmap: false
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 2Gi
+      podTemplate:
+        metadata:
+          labels:
+            # Required so k8s/09-promtail.yaml extracts app="elasticsearch" and app_name="elasticsearch"
+            app: elasticsearch
+            app.kubernetes.io/name: elasticsearch
+            app.kubernetes.io/component: search
+            app.kubernetes.io/part-of: full-stack-app
+        spec:
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/master
+              operator: Exists
+              effect: NoSchedule
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      elasticsearch.k8s.elastic.co/cluster-name: task-search
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: elasticsearch
+              env:
+                - name: ES_JAVA_OPTS
+                  value: "-Xms512m -Xmx512m"
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 1Gi
+                limits:
+                  cpu: 1000m
+                  memory: 1Gi

@@ -1,0 +1,95 @@
+# Prometheus exporter for the ECK-managed 'task-search' Elasticsearch cluster.
+# Connects over HTTPS using the ECK-generated CA and the built-in 'elastic' user,
+# exposes metrics on :9114/metrics (scraped by k8s/11-prometheus.yaml, job 'elasticsearch').
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch-exporter
+  namespace: full-stack-app
+  labels:
+    app: elasticsearch-exporter
+    app.kubernetes.io/name: elasticsearch-exporter
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: full-stack-app
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9114
+      targetPort: 9114
+  selector:
+    app: elasticsearch-exporter
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch-exporter
+  namespace: full-stack-app
+  labels:
+    app.kubernetes.io/name: elasticsearch-exporter
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: full-stack-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch-exporter
+  template:
+    metadata:
+      labels:
+        app: elasticsearch-exporter
+        app.kubernetes.io/name: elasticsearch-exporter
+        app.kubernetes.io/component: monitoring
+    spec:
+      containers:
+        - name: exporter
+          image: quay.io/prometheuscommunity/elasticsearch-exporter:v1.9.0
+          args:
+            - --es.uri=https://task-search-es-http.full-stack-app.svc:9200
+            - --es.ca=/etc/elasticsearch/certs/ca.crt
+            - --es.all
+            - --es.indices
+            - --es.shards
+            - --es.timeout=10s
+            - --web.listen-address=:9114
+          env:
+            - name: ES_USERNAME
+              value: elastic
+            - name: ES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: task-search-es-elastic-user
+                  key: elastic
+          ports:
+            - name: metrics
+              containerPort: 9114
+          volumeMounts:
+            - name: es-ca
+              mountPath: /etc/elasticsearch/certs
+              readOnly: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9114
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9114
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: es-ca
+          secret:
+            secretName: task-search-es-http-certs-public
+            items:
+              - key: ca.crt
+                path: ca.crt

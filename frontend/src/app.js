@@ -9,6 +9,7 @@
   // Configuration
   const API_BASE = '/api/tasks';
   const TOAST_DURATION_MS = 4000;
+  const SEARCH_DEBOUNCE_MS = 280;
 
   // State
   let tasks = [];
@@ -22,6 +23,12 @@
   let completedCount = 0;
   let isSubmitting = false;
   let toastTimer = null;
+  let searchQuery = '';
+  let searchSource = null; // null | 'elasticsearch' | 'postgresql-fallback'
+  let searchDebounceTimer = null;
+  let activeLoadController = null;
+  let loadRequestSeq = 0;
+  let isReindexing = false;
 
   // DOM Elements
   const toastBanner = document.getElementById('toast-banner');
@@ -47,6 +54,12 @@
   const clearFormBtn = document.getElementById('clear-form-btn');
 
   const filterButtons = document.querySelectorAll('.filter-btn');
+  const searchForm = document.getElementById('search-form');
+  const searchInput = document.getElementById('search-input');
+  const searchClearBtn = document.getElementById('search-clear-btn');
+  const searchSourceBadge = document.getElementById('search-source-badge');
+  const reindexBtn = document.getElementById('reindex-btn');
+  const reindexIcon = document.getElementById('reindex-icon');
   const refreshBtn = document.getElementById('refresh-btn');
   const refreshIcon = document.getElementById('refresh-icon');
 
@@ -192,7 +205,7 @@
       setConnectionStatus(true);
       return await response.json();
     } catch (err) {
-      if (err.name === 'TypeError' || err.message.includes('fetch')) {
+      if (err.name !== 'AbortError' && (err.name === 'TypeError' || (err.message && err.message.includes('fetch')))) {
         setConnectionStatus(false);
       }
       throw err;
@@ -237,11 +250,97 @@
     if (lastPageBtn) lastPageBtn.disabled = currentPage >= totalPages - 1;
   }
 
+  function updateSearchSourceBadge() {
+    if (!searchSourceBadge) return;
+    if (!searchQuery.trim() || !searchSource) {
+      searchSourceBadge.className = 'search-source-badge hidden';
+      searchSourceBadge.textContent = '';
+      return;
+    }
+
+    if (searchSource === 'elasticsearch') {
+      searchSourceBadge.className = 'search-source-badge source-es';
+      searchSourceBadge.textContent = 'Search: Elasticsearch';
+    } else {
+      searchSourceBadge.className = 'search-source-badge source-pg';
+      searchSourceBadge.textContent = 'Search: PG Fallback';
+    }
+  }
+
+  function renderHighlightedText(container, highlightedText, fallbackText) {
+    if (!container) return;
+    container.textContent = '';
+
+    const hasHighlightContent = typeof highlightedText === 'string'
+      && highlightedText.replace(/<\/?mark>/gi, '').length > 0;
+    const raw = hasHighlightContent
+      ? highlightedText
+      : (typeof fallbackText === 'string' ? fallbackText : '');
+
+    if (!raw) return;
+
+    const markTagRe = /<\/?mark>/gi;
+    let pos = 0;
+    let markDepth = 0;
+    let currentMarkEl = null;
+    let match;
+
+    while ((match = markTagRe.exec(raw)) !== null) {
+      const nextIdx = match.index;
+      const tag = match[0];
+
+      if (nextIdx > pos) {
+        const chunk = raw.slice(pos, nextIdx);
+        (currentMarkEl || container).appendChild(document.createTextNode(chunk));
+      }
+
+      if (tag[1] !== '/') {
+        if (markDepth === 0) {
+          currentMarkEl = document.createElement('mark');
+          container.appendChild(currentMarkEl);
+        }
+        markDepth++;
+      } else {
+        if (markDepth > 0) {
+          markDepth--;
+          if (markDepth === 0) {
+            if (currentMarkEl && !currentMarkEl.textContent) {
+              currentMarkEl.remove();
+            }
+            currentMarkEl = null;
+          }
+        } else {
+          container.appendChild(document.createTextNode(tag));
+        }
+      }
+
+      pos = markTagRe.lastIndex;
+    }
+
+    if (pos < raw.length) {
+      const tail = raw.slice(pos);
+      (currentMarkEl || container).appendChild(document.createTextNode(tail));
+    }
+
+    if (currentMarkEl && !currentMarkEl.textContent) {
+      currentMarkEl.remove();
+    }
+  }
+
   function renderTasks() {
     taskListEl.innerHTML = '';
 
     if (totalElements === 0) {
-      if (currentFilter === 'active') {
+      const trimmedQuery = searchQuery.trim();
+      if (trimmedQuery.length > 0) {
+        if (currentFilter === 'active' || currentFilter === 'completed') {
+          emptyTitle.textContent = `No matching ${currentFilter} tasks`;
+          emptyDesc.textContent = `No ${currentFilter} tasks matched "${trimmedQuery}". Try switching tabs or clearing the search.`;
+        } else {
+          emptyTitle.textContent = 'No matching tasks found';
+          emptyDesc.textContent = `No tasks matched "${trimmedQuery}". Try a different search term or clear the search filter.`;
+        }
+      } else if (currentFilter === 'active') {
         emptyTitle.textContent = 'No active tasks';
         emptyDesc.textContent = 'All tasks are marked as completed! Nice work!';
       } else if (currentFilter === 'completed') {
@@ -303,15 +402,19 @@
 
     const titleEl = document.createElement('span');
     titleEl.className = 'task-title';
-    titleEl.textContent = task.title;
+    renderHighlightedText(titleEl, task.highlightedTitle, task.title || '');
 
     headerDiv.appendChild(titleEl);
 
     // Optional description
-    if (task.description && task.description.trim()) {
+    const hasDescription = Boolean(
+      (task.description && task.description.trim()) ||
+      (task.highlightedDescription && task.highlightedDescription.replace(/<\/?mark>/gi, '').trim())
+    );
+    if (hasDescription) {
       const descEl = document.createElement('p');
       descEl.className = 'task-desc';
-      descEl.textContent = task.description;
+      renderHighlightedText(descEl, task.highlightedDescription, task.description || '');
       headerDiv.appendChild(descEl);
     }
 
@@ -366,10 +469,17 @@
   }
 
   // =========================================================================
-  // Task Operations (CRUD with Pagination)
+  // Task Operations (CRUD, Search & Pagination)
   // =========================================================================
 
-  async function loadTasks(page = currentPage) {
+  async function loadTasks(page = currentPage, _retriedClamp = false) {
+    const requestSeq = ++loadRequestSeq;
+    if (activeLoadController) {
+      activeLoadController.abort();
+    }
+    const controller = new AbortController();
+    activeLoadController = controller;
+
     loadingSpinner.classList.remove('hidden');
     emptyState.classList.add('hidden');
     refreshIcon.classList.add('rotating');
@@ -377,17 +487,35 @@
 
     try {
       currentPage = Math.max(0, page);
-      const url = `${API_BASE}?page=${currentPage}&size=${pageSize}&filter=${currentFilter}`;
-      const data = await apiFetch(url, { method: 'GET' });
+      const trimmedQuery = searchQuery.trim();
+      const isSearching = trimmedQuery.length > 0;
+      const params = new URLSearchParams({
+        page: String(currentPage),
+        size: String(pageSize)
+      });
+
+      let url;
+      if (isSearching) {
+        params.set('q', trimmedQuery);
+        params.set('status', currentFilter);
+        url = `${API_BASE}/search?${params.toString()}`;
+      } else {
+        params.set('filter', currentFilter);
+        url = `${API_BASE}?${params.toString()}`;
+      }
+
+      const data = await apiFetch(url, { method: 'GET', signal: controller.signal });
+      if (requestSeq !== loadRequestSeq) return;
 
       if (data && Array.isArray(data.content)) {
         tasks = data.content;
-        currentPage = data.page;
-        totalPages = data.totalPages;
-        totalElements = data.totalElements;
-        totalCount = data.totalCount;
-        activeCount = data.activeCount;
-        completedCount = data.completedCount;
+        currentPage = typeof data.page === 'number' ? data.page : currentPage;
+        totalPages = typeof data.totalPages === 'number' ? data.totalPages : 1;
+        totalElements = typeof data.totalElements === 'number' ? data.totalElements : tasks.length;
+        totalCount = typeof data.totalCount === 'number' ? data.totalCount : totalElements;
+        activeCount = typeof data.activeCount === 'number' ? data.activeCount : 0;
+        completedCount = typeof data.completedCount === 'number' ? data.completedCount : 0;
+        searchSource = isSearching && typeof data.searchSource === 'string' ? data.searchSource : null;
       } else if (Array.isArray(data)) {
         tasks = data;
         currentPage = 0;
@@ -396,24 +524,70 @@
         totalCount = data.length;
         completedCount = data.filter(t => Boolean(t.completed)).length;
         activeCount = totalCount - completedCount;
+        searchSource = null;
       } else {
         tasks = [];
         totalElements = 0;
+        totalPages = 1;
+        searchSource = isSearching && data && typeof data.searchSource === 'string' ? data.searchSource : null;
       }
 
+      if (!_retriedClamp && totalPages > 0 && currentPage >= totalPages) {
+        return await loadTasks(totalPages - 1, true);
+      }
+
+      updateSearchSourceBadge();
       updateCounters();
       renderTasks();
     } catch (err) {
+      if (err.name === 'AbortError' || requestSeq !== loadRequestSeq) return;
       console.error('Error loading tasks:', err);
+      searchSource = null;
+      updateSearchSourceBadge();
       showToast(`Failed to load tasks: ${err.message}. Is the backend pod running?`, 'error', 6000);
       emptyTitle.textContent = 'Backend connection error';
       emptyDesc.textContent = 'Unable to fetch tasks from /api/tasks. Check Kubernetes Ingress and backend pod status.';
       emptyState.classList.remove('hidden');
       if (paginationBar) paginationBar.classList.add('hidden');
     } finally {
-      loadingSpinner.classList.add('hidden');
-      refreshIcon.classList.remove('rotating');
-      refreshBtn.disabled = false;
+      if (requestSeq === loadRequestSeq) {
+        loadingSpinner.classList.add('hidden');
+        refreshIcon.classList.remove('rotating');
+        refreshBtn.disabled = false;
+        activeLoadController = null;
+      }
+    }
+  }
+
+  async function reindexTasks() {
+    if (isReindexing || !reindexBtn) return;
+
+    isReindexing = true;
+    reindexBtn.disabled = true;
+    if (reindexIcon) {
+      reindexIcon.classList.add('rotating');
+    }
+
+    try {
+      const data = await apiFetch(`${API_BASE}/reindex`, { method: 'POST' });
+      const count = data && typeof data.indexedCount === 'number' ? data.indexedCount : 0;
+      showToast(`Reindexed ${count} tasks into Elasticsearch.`, 'success');
+      if (searchQuery.trim().length > 0) {
+        await loadTasks(currentPage);
+      }
+    } catch (err) {
+      console.error('Error reindexing tasks:', err);
+      if (err.status === 503) {
+        showToast(`Reindex unavailable (Elasticsearch offline): ${err.message}`, 'error', 6000);
+      } else {
+        showToast(`Reindex failed: ${err.message}`, 'error', 6000);
+      }
+    } finally {
+      isReindexing = false;
+      reindexBtn.disabled = false;
+      if (reindexIcon) {
+        reindexIcon.classList.remove('rotating');
+      }
     }
   }
 
@@ -484,8 +658,8 @@
 
     try {
       const payload = {
-        title: title || tasks[taskIndex].title,
-        description: description || tasks[taskIndex].description || '',
+        title: title !== undefined ? title : tasks[taskIndex].title,
+        description: description !== undefined ? (description || '') : (tasks[taskIndex].description || ''),
         completed: newCompleted
       };
 
@@ -496,12 +670,17 @@
 
       // If active filter is set to active/completed, refresh list to properly remove item from view
       if (currentFilter !== 'all') {
+        if (tasks.length === 1 && currentPage > 0) {
+          currentPage--;
+        }
         loadTasks(currentPage);
       }
     } catch (err) {
       console.error('Error updating task:', err);
       // Revert optimistic update
-      tasks[taskIndex].completed = currentCompleted;
+      if (tasks[taskIndex] && tasks[taskIndex].id === id) {
+        tasks[taskIndex].completed = currentCompleted;
+      }
       loadTasks(currentPage);
       showToast(`Failed to update task: ${err.message}`, 'error');
     }
@@ -555,11 +734,116 @@
       loadTasks(currentPage);
     });
 
+    // Reindex button
+    if (reindexBtn) {
+      reindexBtn.addEventListener('click', reindexTasks);
+    }
+
+    // Search input (debounced + Escape clear)
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        if (searchClearBtn) {
+          searchClearBtn.classList.toggle('hidden', searchInput.value.length === 0);
+        }
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+        }
+        searchDebounceTimer = setTimeout(() => {
+          searchDebounceTimer = null;
+          const nextQuery = searchInput.value.trim();
+          if (nextQuery === searchQuery) return;
+          searchQuery = nextQuery;
+          if (!searchQuery) {
+            searchSource = null;
+            updateSearchSourceBadge();
+          }
+          currentPage = 0;
+          loadTasks(0);
+        }, SEARCH_DEBOUNCE_MS);
+      });
+
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && (searchInput.value !== '' || searchQuery !== '')) {
+          e.preventDefault();
+          if (searchDebounceTimer) {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = null;
+          }
+          searchInput.value = '';
+          if (searchClearBtn) {
+            searchClearBtn.classList.add('hidden');
+          }
+          if (searchQuery !== '' || searchSource !== null) {
+            searchQuery = '';
+            searchSource = null;
+            updateSearchSourceBadge();
+            currentPage = 0;
+            loadTasks(0);
+          }
+        }
+      });
+    }
+
+    // Search form submit
+    if (searchForm) {
+      searchForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = null;
+        }
+        searchQuery = searchInput ? searchInput.value.trim() : '';
+        if (searchClearBtn && searchInput) {
+          searchClearBtn.classList.toggle('hidden', searchInput.value.length === 0);
+        }
+        if (!searchQuery) {
+          searchSource = null;
+          updateSearchSourceBadge();
+        }
+        currentPage = 0;
+        loadTasks(0);
+      });
+    }
+
+    // Search clear button
+    if (searchClearBtn) {
+      searchClearBtn.addEventListener('click', () => {
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = null;
+        }
+        if (searchInput) {
+          searchInput.value = '';
+          searchInput.focus();
+        }
+        searchClearBtn.classList.add('hidden');
+        if (searchQuery !== '' || searchSource !== null) {
+          searchQuery = '';
+          searchSource = null;
+          updateSearchSourceBadge();
+          currentPage = 0;
+          loadTasks(0);
+        }
+      });
+    }
+
     // Filter tabs
     filterButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const filter = btn.dataset.filter;
         if (filter === currentFilter) return;
+
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = null;
+        }
+        if (searchInput) {
+          searchQuery = searchInput.value.trim();
+        }
+        if (!searchQuery) {
+          searchSource = null;
+          updateSearchSourceBadge();
+        }
 
         filterButtons.forEach(b => {
           b.classList.remove('active');

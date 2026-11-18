@@ -1,8 +1,11 @@
 package com.example.fullstackapp.controller;
 
+import com.example.fullstackapp.dto.ReindexResponse;
 import com.example.fullstackapp.dto.TaskCreateRequest;
 import com.example.fullstackapp.dto.TaskResponse;
+import com.example.fullstackapp.dto.TaskSearchResponse;
 import com.example.fullstackapp.dto.TaskUpdateRequest;
+import com.example.fullstackapp.service.TaskSearchService;
 import com.example.fullstackapp.service.TaskService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -29,9 +32,11 @@ public class TaskController {
     private static final Logger log = LoggerFactory.getLogger(TaskController.class);
 
     private final TaskService taskService;
+    private final TaskSearchService taskSearchService;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, TaskSearchService taskSearchService) {
         this.taskService = taskService;
+        this.taskSearchService = taskSearchService;
     }
 
     @GetMapping
@@ -46,6 +51,26 @@ public class TaskController {
         }
         log.info("Fetching tasks page: {}, size: {}, filter: {}", page, size, filter);
         return ResponseEntity.ok(taskService.getTasks(page, size, filter));
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<TaskSearchResponse> searchTasks(
+            @RequestParam(defaultValue = "") String q,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String filter,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        String effectiveStatus = (status != null && !status.isBlank())
+                ? status
+                : (filter != null && !filter.isBlank() ? filter : "all");
+        log.info("Searching tasks q='{}', status='{}', page={}, size={}", q, effectiveStatus, page, size);
+        return ResponseEntity.ok(taskSearchService.searchTasks(q, effectiveStatus, page, size));
+    }
+
+    @PostMapping("/reindex")
+    public ResponseEntity<ReindexResponse> reindexTasks() {
+        log.info("Manual reindex of all tasks requested");
+        return ResponseEntity.ok(taskSearchService.reindexAllTasks());
     }
 
     @GetMapping("/{id}")

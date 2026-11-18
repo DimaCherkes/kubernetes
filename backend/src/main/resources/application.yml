@@ -24,6 +24,12 @@ spring:
   jackson:
     serialization:
       write-dates-as-timestamps: false
+  elasticsearch:
+    uris: ${SPRING_ELASTICSEARCH_URIS:http://localhost:9200}
+    username: ${SPRING_ELASTICSEARCH_USERNAME:}
+    password: ${SPRING_ELASTICSEARCH_PASSWORD:${ELASTICSEARCH_PASSWORD:}}
+    connection-timeout: 2s
+    socket-timeout: 5s
 
 management:
   endpoints:
@@ -44,6 +50,8 @@ management:
           server:
             requests: true
   health:
+    elasticsearch:
+      enabled: true
     livenessstate:
       enabled: true
     readinessstate:

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Kubernetes Full-Stack Task Manager Single Page Application">
   <title>Kubernetes Task Manager</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=5">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☸️</text></svg>">
 </head>
 <body>
@@ -126,27 +126,66 @@
         </form>
       </section>
 
-      <!-- Task Controls & Filter Bar -->
+      <!-- Task Controls, Search & Filter Bar -->
       <section class="tasks-section">
         <div class="section-toolbar">
-          <div class="filter-group" role="tablist" aria-label="Filter tasks">
-            <button type="button" class="filter-btn active" data-filter="all" role="tab" aria-selected="true">
-              All <span class="filter-badge" id="filter-all-count">0</span>
-            </button>
-            <button type="button" class="filter-btn" data-filter="active" role="tab" aria-selected="false">
-              Active <span class="filter-badge" id="filter-active-count">0</span>
-            </button>
-            <button type="button" class="filter-btn" data-filter="completed" role="tab" aria-selected="false">
-              Completed <span class="filter-badge" id="filter-completed-count">0</span>
-            </button>
-          </div>
-          <div class="toolbar-actions">
-            <button type="button" id="refresh-btn" class="btn btn-ghost" title="Refresh task list" aria-label="Refresh tasks">
-              <svg id="refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          <form id="search-form" class="search-form" role="search">
+            <div class="search-input-wrapper">
+              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
-              <span>Refresh</span>
+              <input
+                type="search"
+                id="search-input"
+                class="search-input"
+                placeholder="Search tasks by title or description..."
+                aria-label="Search tasks"
+                autocomplete="off"
+                maxlength="255"
+              >
+              <button
+                type="button"
+                id="search-clear-btn"
+                class="search-clear-btn hidden"
+                title="Clear search"
+                aria-label="Clear search"
+              >&times;</button>
+            </div>
+            <button type="submit" id="search-submit-btn" class="btn btn-primary search-submit-btn">
+              Search
             </button>
+          </form>
+
+          <div class="toolbar-controls-row">
+            <div class="filter-group" role="tablist" aria-label="Filter tasks">
+              <button type="button" class="filter-btn active" data-filter="all" role="tab" aria-selected="true">
+                All <span class="filter-badge" id="filter-all-count">0</span>
+              </button>
+              <button type="button" class="filter-btn" data-filter="active" role="tab" aria-selected="false">
+                Active <span class="filter-badge" id="filter-active-count">0</span>
+              </button>
+              <button type="button" class="filter-btn" data-filter="completed" role="tab" aria-selected="false">
+                Completed <span class="filter-badge" id="filter-completed-count">0</span>
+              </button>
+            </div>
+            <div class="toolbar-actions">
+              <span id="search-source-badge" class="search-source-badge hidden" aria-live="polite" title="Active search engine"></span>
+              <button type="button" id="reindex-btn" class="btn btn-ghost btn-reindex" title="Reindex PostgreSQL tasks into Elasticsearch" aria-label="Reindex search">
+                <svg id="reindex-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                  <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                  <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                </svg>
+                <span>Reindex</span>
+              </button>
+              <button type="button" id="refresh-btn" class="btn btn-ghost" title="Refresh task list" aria-label="Refresh tasks">
+                <svg id="refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -207,6 +246,7 @@
           <span class="tech-pill">Ingress NGINX</span>
           <span class="tech-pill">Spring Boot 3</span>
           <span class="tech-pill">PostgreSQL 16</span>
+          <span class="tech-pill">Elasticsearch 8</span>
           <span class="tech-pill">Nginx Alpine</span>
         </div>
         <p class="footer-note">Full-Stack Kubernetes Tutorial Application</p>
@@ -214,6 +254,6 @@
     </main>
   </div>
 
-  <script src="app.js" defer></script>
+  <script src="app.js?v=5" defer></script>
 </body>
 </html>
